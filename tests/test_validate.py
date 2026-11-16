@@ -20,6 +20,39 @@ def _codes(path):
     return {issue.code for issue in validate(Package.read(path))}
 
 
+class DiffListTests(unittest.TestCase):
+    """different_settings_to_system has two legitimate shapes, not one."""
+
+    def _issues(self, **kwargs):
+        with support.scratch() as tmp:
+            path = build_foreign_project(pathlib.Path(tmp) / "diff.3mf", broken=False, **kwargs)
+            return validate(Package.read(path))
+
+    def test_bambu_per_filament_shape_is_accepted(self):
+        # Bambu writes process + one entry per filament slot + printer, so a
+        # four-filament project has six entries. That is not malformed.
+        issues = self._issues(
+            filaments=4,
+            extra={"different_settings_to_system": ["", "", "", "", "", ""]},
+        )
+        self.assertNotIn("V048", {issue.code for issue in issues})
+
+    def test_orca_three_entry_shape_is_accepted(self):
+        issues = self._issues(filaments=4, extra={"different_settings_to_system": ["", "", ""]})
+        self.assertNotIn("V048", {issue.code for issue in issues})
+
+    def test_other_lengths_are_reported_with_the_numbers(self):
+        issues = [
+            issue for issue in self._issues(
+                filaments=4,
+                extra={"different_settings_to_system": ["", "", "", ""]},
+            ) if issue.code == "V048"
+        ]
+        self.assertTrue(issues)
+        self.assertIn("4 entr", issues[0].message)
+        self.assertIn("6", issues[0].message)
+
+
 class ValidateTests(unittest.TestCase):
     def test_broken_fixture_is_diagnosed(self):
         with support.scratch() as tmp:

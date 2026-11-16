@@ -300,13 +300,24 @@ def _check_settings(settings: ProjectSettings, kit, c: _Collector) -> None:
         )
 
     diff = settings.get("different_settings_to_system")
+    slots = settings.filament_count()
     if diff is None:
         c.warn("V048", "different_settings_to_system is absent; the UI will show no overrides")
-    elif not isinstance(diff, list) or len(diff) != 3:
+    elif not isinstance(diff, list) or not all(isinstance(entry, str) for entry in diff):
         c.warn(
             "V048",
-            "different_settings_to_system is not the expected 3-entry "
-            "[process, filament, printer] list",
+            "different_settings_to_system is not a list of strings; the slicer's "
+            "override display will be wrong",
+        )
+    elif len(diff) not in (3, slots + 2):
+        # Orca writes one entry per domain (process, filament, printer); Bambu
+        # writes one per domain *plus one per filament slot*, so a four-filament
+        # Bambu project legitimately has six. Anything else is malformed.
+        c.warn(
+            "V048",
+            f"different_settings_to_system has {len(diff)} entries for {slots} filament "
+            f"slot(s); expected 3 (process/filament/printer) or {slots + 2} "
+            "(the same, one entry per filament)",
         )
 
     if kit is not None and kit.has_machine_geometry():
@@ -495,7 +506,11 @@ def _check_aux(
 
 def _check_staleness(package: Package, model: Model3D, c: _Collector) -> None:
     if package.has(SLICE_INFO_PATH):
-        c.warn("V060", "slice_info.config is present: the project was saved after slicing")
+        c.warn(
+            "V060",
+            "slice_info.config is present: the project was saved after slicing, and that "
+            "slice data is stale for any other printer (dropped on translation)",
+        )
     if model.metadata("BambuStudio:3mfVersion") and "bambu" not in model.metadata("Application").lower():
         c.warn(
             "V061",
