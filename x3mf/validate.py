@@ -506,11 +506,22 @@ def _check_aux(
 
 def _check_staleness(package: Package, model: Model3D, c: _Collector) -> None:
     if package.has(SLICE_INFO_PATH):
-        c.warn(
-            "V060",
-            "slice_info.config is present: the project was saved after slicing, and that "
-            "slice data is stale for any other printer (dropped on translation)",
-        )
+        # A leftover slice summary is normal (most projects are saved after a
+        # test slice). Only carrying the actual g-code is worth a warning: that
+        # is machine-specific output the file cannot legally keep.
+        sliced = [name for name in package.names() if name.lower().endswith(".gcode")]
+        if sliced:
+            c.warn(
+                "V060",
+                f"the project carries sliced g-code ({len(sliced)} file(s), e.g. {sliced[0]}); "
+                "it is specific to the printer that produced it and is dropped on translation",
+            )
+        else:
+            c.info(
+                "V060",
+                "slice_info.config from an earlier slice is present (no g-code in the file); "
+                "it is dropped on translation",
+            )
     if model.metadata("BambuStudio:3mfVersion") and "bambu" not in model.metadata("Application").lower():
         c.warn(
             "V061",

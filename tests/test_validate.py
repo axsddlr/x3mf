@@ -53,6 +53,34 @@ class DiffListTests(unittest.TestCase):
         self.assertIn("6", issues[0].message)
 
 
+class SliceEvidenceTests(unittest.TestCase):
+    """V060 warns about sliced g-code, not about a leftover slice summary."""
+
+    def test_leftover_summary_is_information_not_a_warning(self):
+        with support.scratch() as tmp:
+            path = build_foreign_project(pathlib.Path(tmp) / "sliced.3mf", broken=False)
+            issues = [i for i in validate(Package.read(path)) if i.code == "V060"]
+        self.assertEqual(len(issues), 1)
+        self.assertEqual(issues[0].level, "info")
+        self.assertIn("no g-code", issues[0].message)
+
+    def test_carried_gcode_is_a_warning(self):
+        import zipfile
+
+        with support.scratch() as tmp:
+            path = build_foreign_project(pathlib.Path(tmp) / "sliced.3mf", broken=False)
+            with zipfile.ZipFile(path) as archive:
+                entries = {name: archive.read(name) for name in archive.namelist()}
+            entries["Metadata/plate_1.gcode"] = b"; gcode for another printer\n"
+            with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as archive:
+                for name, payload in entries.items():
+                    archive.writestr(name, payload)
+            issues = [i for i in validate(Package.read(path)) if i.code == "V060"]
+        self.assertEqual(len(issues), 1)
+        self.assertEqual(issues[0].level, "warning")
+        self.assertIn("g-code", issues[0].message)
+
+
 class ValidateTests(unittest.TestCase):
     def test_broken_fixture_is_diagnosed(self):
         with support.scratch() as tmp:
