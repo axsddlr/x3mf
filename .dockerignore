@@ -1,0 +1,25 @@
+# Build context hygiene: everything the image does not need, and one thing it
+# must never contain (a round-trip of a personal print project).
+.git
+.gitignore
+.gitattributes
+.github
+.tmp
+.x3mf-web
+.impeccable
+out
+docs
+tests
+*.log
+__pycache__
+*.py[cod]
+*.egg-info
+build
+dist
+.venv
+venv
+.pytest_cache
+.mypy_cache
+.ruff_cache
+pip-*
+examples/retrocase_roundtrip.3mf

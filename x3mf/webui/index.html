@@ -1,0 +1,215 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>x3mf — 3MF project translator</title>
+<meta name="description" content="Translate a slicer 3MF project into another slicer's native project, carrying plates, parts, filaments, colour changes, height ranges and process settings.">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/app.css">
+</head>
+<body>
+<a class="skip" href="#work">Skip to the translator</a>
+
+<header class="top">
+  <div class="top__bar">
+    <span class="mark" aria-hidden="true">
+      <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round">
+        <path d="M12 3 21 8v8l-9 5-9-5V8z"/><path d="M3 8l9 5 9-5"/><path d="M12 13v8"/>
+      </svg>
+    </span>
+    <h1 class="wordmark">x3mf</h1>
+    <span class="badge">project translator</span>
+  </div>
+  <p class="lede">
+    Moves a whole print project between slicers — plates, parts, filament assignments,
+    colours, layer colour changes, height-range modifiers and process settings.
+    <strong>The machine comes from the destination, never from the source.</strong>
+  </p>
+</header>
+
+<main id="work" class="grid">
+
+  <section class="col" aria-label="Inputs">
+
+    <div class="card">
+      <div class="card__head">
+        <span class="step" aria-hidden="true">1</span>
+        <h2>Source project</h2>
+        <p class="hint">the .3mf you want to move</p>
+      </div>
+
+      <label class="drop" data-drop="source">
+        <input type="file" id="source-input" accept=".3mf,application/vnd.ms-package.3dmanufacturing-3dmodel+xml" class="file-input">
+        <span class="drop__icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 16V4"/><path d="m7 9 5-5 5 5"/><path d="M4 17v2a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-2"/>
+          </svg>
+        </span>
+        <span class="drop__body">
+          <span class="drop__title" id="source-title">Drop a .3mf here, or choose a file</span>
+          <span class="drop__meta" id="source-meta">Bambu Studio, OrcaSlicer, MakerWorld exports, PrusaSlicer projects</span>
+        </span>
+      </label>
+      <div class="drop-actions" id="source-actions" hidden>
+        <button type="button" class="linkish" id="source-remove">Remove file</button>
+      </div>
+      <div class="chips" id="source-chips" hidden></div>
+      <div class="samples" id="samples" hidden>
+        <span>No file handy?</span>
+        <button type="button" class="sample" id="load-sample">Load the bundled sample project</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card__head">
+        <span class="step" aria-hidden="true">2</span>
+        <h2>Destination printer</h2>
+        <p class="hint">the machine the translated project should print on</p>
+      </div>
+
+      <div class="modes" role="radiogroup" aria-label="Where will this print?">
+        <label class="mode">
+          <input type="radio" name="dest" value="kit" checked>
+          <span>
+            <b>Another printer</b>
+            <em>different slicer, different machine</em>
+          </span>
+        </label>
+        <label class="mode">
+          <input type="radio" name="dest" value="same">
+          <span>
+            <b>Same printer</b>
+            <em>only the slicer changes</em>
+          </span>
+        </label>
+      </div>
+
+      <div id="kit-area">
+        <label class="drop" data-drop="kit">
+          <input type="file" id="kit-input" accept=".3mf" class="file-input">
+          <span class="drop__icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 10h18"/><path d="M8 15h4"/>
+            </svg>
+          </span>
+          <span class="drop__body">
+            <span class="drop__title" id="kit-title">Drop your printer's .3mf here</span>
+            <span class="drop__meta" id="kit-meta">saved from the slicer you're moving to — a cube is enough</span>
+          </span>
+        </label>
+
+        <details class="howto">
+          <summary>How do I get that file?</summary>
+          <ol>
+            <li>Open the slicer you're moving <em>to</em>, and select the printer, nozzle and filament you actually print with.</li>
+            <li>Put anything on the plate (a cube is enough), or open a project already saved with that printer.</li>
+            <li><code>File ▸ Save Project</code> (<kbd>Ctrl</kbd>+<kbd>S</kbd>) and keep the <code>.3mf</code>.</li>
+            <li>Drop it above. Nothing is printed from it; it only carries your machine.</li>
+          </ol>
+          <p>
+            A dropdown can't do this job: the slicer keeps its printer list inside its own
+            installation, which this tool cannot read. The project that slicer saves is that
+            list in a file you can hand over: bed size, nozzle, extruder count, machine limits
+            and the preset names it will accept.
+          </p>
+        </details>
+      </div>
+
+      <div class="drop-actions" id="kit-actions" hidden>
+        <button type="button" class="linkish" id="kit-remove">Remove file</button>
+      </div>
+
+      <p class="note" id="kit-note">
+        Machine geometry, limits and preset names will come from this file, not from the
+        source project.
+      </p>
+    </div>
+
+    <details class="advanced">
+        <summary>Options</summary>
+        <div class="fields">
+          <label class="field">
+            <span>Target dialect</span>
+            <select id="opt-to">
+              <option value="">auto, from the printer file</option>
+              <option value="orca">OrcaSlicer</option>
+              <option value="bambu">Bambu Studio</option>
+              <option value="flashforge">FlashForge Flash Studio</option>
+              <option value="snapmaker">Snapmaker</option>
+              <option value="generic">generic Orca-lineage</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>Filament slots</span>
+            <input id="opt-filaments" type="number" min="1" max="16" placeholder="keep source">
+          </label>
+          <label class="field">
+            <span>Extruders</span>
+            <input id="opt-extruders" type="number" min="1" max="8" placeholder="from kit">
+          </label>
+          <label class="check"><input type="checkbox" id="opt-drop-aux"> Drop layer ranges and colour changes</label>
+          <label class="check"><input type="checkbox" id="opt-keep-unknown"> Keep keys the destination does not declare</label>
+          <label class="check"><input type="checkbox" id="opt-force"> Write even if validation fails</label>
+        </div>
+    </details>
+
+    <button class="primary" id="run" aria-label="Translate project" disabled>
+      <span>Translate project</span>
+      <kbd aria-hidden="true">⏎</kbd>
+    </button>
+    <p class="gate" id="gate" hidden></p>
+    <p class="disclaimer">
+      Runs locally: files are written to a scratch folder for the duration of the request
+      and the download link expires after 15 minutes.
+    </p>
+  </section>
+
+  <section class="col col--result" aria-label="Result">
+    <div class="panel" id="panel">
+      <div class="status" id="status">
+        <span class="status__dot" data-kind="idle"></span>
+        <span class="status__text" aria-live="polite">Waiting for a project</span>
+        <span class="status__time" id="status-time" aria-hidden="true"></span>
+      </div>
+      <div id="result">
+        <div class="empty">
+          <h3>What this does, precisely</h3>
+          <ol class="steps">
+            <li><strong>Objects, plates and parts</strong> keep their ids, transforms and roles, including modifier and support-blocker volumes.</li>
+            <li><strong>Filaments keep their colour and material</strong>; each slot is pointed at a preset the destination actually has.</li>
+            <li><strong>Layer metadata is preserved byte-for-byte</strong>; only object ids and filament indices are remapped when slots collapse.</li>
+            <li><strong>Printer geometry, nozzle and machine limits come from your printer file</strong>, and the output is checked against them before it is written.</li>
+          </ol>
+          <p class="empty__foot">
+            Start with a source project, then say where it will print: another machine needs
+            your printer's file, the same machine needs nothing.
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer class="foot">
+  <span>Same engine as the CLI:</span>
+  <code>python -m x3mf translate project.3mf --kit destination.3mf --out out.3mf</code>
+  <a class="kofi"
+     href="https://ko-fi.com/J3J1IR40C"
+     target="_blank"
+     rel="noopener noreferrer"
+     title="Support this project on Ko-fi"
+     aria-label="Support this project on Ko-fi (opens in a new tab)">
+    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor"
+         stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <path d="M4 9h11v6a4 4 0 0 1-4 4H8a4 4 0 0 1-4-4z"/>
+      <path d="M15 10h2.5a2.5 2.5 0 0 1 0 5H15"/>
+      <path d="M7 5.5V4"/><path d="M10.5 5.5V4"/>
+    </svg>
+    <span>Ko-fi</span>
+  </a>
+</footer>
+
+<script src="/app.js" defer></script>
+</body>
+</html>

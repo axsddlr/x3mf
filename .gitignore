@@ -1,0 +1,43 @@
+# --- local scratch, never published -------------------------------------
+.tmp/
+.x3mf-web/
+out/
+*.log
+
+# Design-review artefacts produced by the impeccable skill on this machine.
+.impeccable/
+
+# --- Python --------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+
+# --- editors and OS ------------------------------------------------------
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# --- generated translations ---------------------------------------------
+# `examples/*.3mf` are intentional fixtures used by --demo and the tests;
+# anything produced by a run belongs here instead.
+*.out.3mf
+translated*.3mf
+# pip scratch left behind by a local wheel build
+pip-*/
+
+# A round-trip of a personal print project: kept on disk, never published.
+# Force-add it (git add -f) only if you intend to ship the geometry.
+examples/retrocase_roundtrip.3mf

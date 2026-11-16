@@ -1,0 +1,7 @@
+* text=auto eol=lf
+
+# 3MF packages are ZIP containers; never apply text conversion.
+*.3mf binary
+*.png binary
+*.jpg binary
+*.ico binary
