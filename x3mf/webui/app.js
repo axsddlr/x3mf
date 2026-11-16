@@ -289,6 +289,11 @@
       }
       updateRunButton();
     } catch (error) {
+      if (isNetworkError(error)) {
+        setStatus("bad", "Cannot reach the translator");
+        result.replaceChildren(offlineBox());
+        return;
+      }
       state.sourceError = true;
       setStatus("bad", "Could not read that file");
       result.replaceChildren(alertBox(error.message));
@@ -313,6 +318,11 @@
       note.classList.toggle("note--warn", !machine);
       if (machine) updateRunButton();
     } catch (error) {
+      if (isNetworkError(error)) {
+        setStatus("bad", "Cannot reach the translator");
+        result.replaceChildren(offlineBox());
+        return;
+      }
       setStatus("bad", "Could not read the kit");
       result.replaceChildren(alertBox(error.message));
     }
@@ -365,6 +375,11 @@
       }
     } catch (error) {
       finishTimer();
+      if (isNetworkError(error)) {
+        setStatus("bad", "Cannot reach the translator");
+        result.replaceChildren(offlineBox());
+        return;
+      }
       setStatus("bad", "Translation failed");
       result.replaceChildren(alertBox(error.message));
     } finally {
@@ -375,13 +390,29 @@
 
   /* ------------------------------------------------------------- rendering */
 
-  function alertBox(message) {
+  function alertBox(message, headline = "Nothing was written.") {
     return el("div", { class: "alert", role: "alert" },
       el("span", { text: "▲", "aria-hidden": "true" }),
       el("div", {},
-        el("strong", { text: "Nothing was written. " }),
+        el("strong", { text: headline + " " }),
         el("span", { text: message })
       )
+    );
+  }
+
+  // A fetch that never got an answer is not a problem with the user's file; the
+  // browser only says "Failed to fetch", which used to be shown as if the
+  // project were unreadable. Distinguish the two so the remedy is obvious.
+  function isNetworkError(error) {
+    if (error instanceof TypeError) return true;
+    return /failed to fetch|networkerror|load failed|fetch failed/i.test(String(error && error.message));
+  }
+
+  function offlineBox() {
+    return alertBox(
+      "The page lost contact with the translator, so nothing was sent. If you closed the " +
+        "terminal, start it again with python -m x3mf web and reload this page.",
+      "The translator is not responding."
     );
   }
 
