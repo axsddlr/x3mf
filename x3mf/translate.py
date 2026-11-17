@@ -40,7 +40,7 @@ from .model import (
     Model3D,
     ModelSettings,
 )
-from .mapping import VARIANT_KEYS, Destination, alias_targets, scalar_of
+from .mapping import VARIANT_KEYS, Destination, alias_targets, clamp_to_limits, scalar_of
 from .mapping import translate as translate_value
 from .settings import (
     GEOMETRY_KEYS,
@@ -501,6 +501,8 @@ class Translator:
             self.out = self.settings.copy()
             self.report.carried.append("all source settings carried unchanged (no kit)")
 
+        self._clamp_machine_limits()
+
         if self.opts.extruders is not None:
             self._force_extruder_count(self.opts.extruders)
 
@@ -508,6 +510,32 @@ class Translator:
         self._emit_identity()
         self._emit_flush_matrix()
         self._emit_diff()
+
+    def _clamp_machine_limits(self) -> None:
+        """Hold speeds and accelerations inside the destination's declared maxima.
+
+        Orca and Bambu both cap these on load and tell the user the setting
+        "exceeds the printer's maximum".  Capping here means the translated
+        project opens quietly, and the report still says what changed.
+        """
+        clamped: list[str] = []
+        for key in list(self.out.keys()):
+            value = self.out.get(key)
+            replacement, ceiling = clamp_to_limits(key, value, self.out.data)
+            if ceiling is None:
+                continue
+            if isinstance(replacement, list):
+                self.out.set_list(key, replacement)
+            else:
+                self.out.set(key, replacement)
+            shown = scalar_of(value)
+            clamped.append(f"{key} {shown} -> {ceiling:g}")
+        if clamped:
+            self.report.adjusted.append(
+                f"{len(clamped)} value(s) clamped to the destination's machine limits: "
+                + ", ".join(sorted(clamped)[:8])
+                + (" …" if len(clamped) > 8 else "")
+            )
 
     def _force_extruder_count(self, count: int) -> None:
         current = self.out.extruder_count()

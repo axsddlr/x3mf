@@ -35,6 +35,7 @@ from .model import (
     q,
     NS,
 )
+from .mapping import limit_keys_for, machine_ceiling
 from .settings import GEOMETRY_KEYS, ProjectSettings
 
 
@@ -319,6 +320,32 @@ def _check_settings(settings: ProjectSettings, kit, c: _Collector) -> None:
             f"slot(s); expected 3 (process/filament/printer) or {slots + 2} "
             "(the same, one entry per filament)",
         )
+
+    # A process value above the machine's declared maximum is exactly what makes
+    # a slicer report "exceeds the printer's maximum" on load and cap it silently.
+    for key in list(settings.keys()):
+        limit_keys = limit_keys_for(key)
+        if not limit_keys:
+            continue
+        ceiling = machine_ceiling(settings.data, limit_keys)
+        if ceiling is None:
+            continue
+        raw = settings.get(key)
+        entries = raw if isinstance(raw, list) else [raw]
+        for entry in entries:
+            if not isinstance(entry, str) or entry.strip().endswith("%"):
+                continue
+            try:
+                number = float(entry)
+            except ValueError:
+                continue
+            if number > ceiling:
+                c.warn(
+                    "V053",
+                    f"{key} is {entry} but {limit_keys[0]} is {ceiling:g}; the destination "
+                    "will cap it on load",
+                )
+                break
 
     if kit is not None and kit.has_machine_geometry():
         for key in GEOMETRY_KEYS:

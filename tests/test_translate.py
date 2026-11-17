@@ -269,6 +269,56 @@ class ValueMappingTests(unittest.TestCase):
         self.assertEqual(settings.get_str("support_style"), "grid")
 
 
+class MachineLimitTests(unittest.TestCase):
+    """A process may not carry speeds the destination's firmware forbids."""
+
+    KIT_LIMITS = {
+        "machine_max_acceleration_travel": ["2500", "2500"],
+        "machine_max_speed_x": ["250", "250"],
+        "machine_max_speed_y": ["250", "250"],
+    }
+
+    def _run(self, source_extra, kit_extra):
+        with support.scratch() as tmp:
+            tmp = pathlib.Path(tmp)
+            source = build_foreign_project(tmp / "src.3mf", broken=False, extra=source_extra)
+            kit = build_kit_project(tmp / "kit.3mf", extra={**self.KIT_LIMITS, **kit_extra})
+            translation = translate(source, kit)
+            return translation, ProjectSettings.from_package(translation.package)
+
+    def test_values_above_the_machine_maximum_are_clamped(self):
+        translation, settings = self._run(
+            {"travel_acceleration": ["10000", "10000"], "travel_speed": ["500", "500"]},
+            {"travel_acceleration": ["1000", "1000"], "travel_speed": ["150", "150"]},
+        )
+        self.assertEqual(settings.get_list("travel_acceleration"), ["2500", "2500"])
+        self.assertEqual(settings.get_list("travel_speed"), ["250", "250"])
+        self.assertTrue(
+            any("clamped to the destination's machine limits" in item
+                for item in translation.report.adjusted)
+        )
+
+    def test_percentages_and_legal_values_are_left_alone(self):
+        _, settings = self._run(
+            {"sparse_infill_acceleration": ["100%", "100%"], "travel_acceleration": ["2000", "2000"]},
+            {"sparse_infill_acceleration": ["50%", "50%"], "travel_acceleration": ["1000", "1000"]},
+        )
+        self.assertEqual(settings.get_list("sparse_infill_acceleration"), ["100%", "100%"])
+        self.assertEqual(settings.get_list("travel_acceleration"), ["2000", "2000"])
+
+    def test_validator_reports_a_value_above_the_maximum(self):
+        with support.scratch() as tmp:
+            path = build_kit_project(
+                pathlib.Path(tmp) / "bad.3mf",
+                extra={
+                    "machine_max_acceleration_travel": ["2500", "2500"],
+                    "travel_acceleration": ["10000", "10000"],
+                },
+            )
+            codes = {issue.code for issue in validate(Package.read(path))}
+        self.assertIn("V053", codes)
+
+
 class TranslateEdgeCaseTests(unittest.TestCase):
     def test_collapse_to_one_slot_remaps_every_assignment(self):
         with support.scratch() as tmp:

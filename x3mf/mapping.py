@@ -401,3 +401,92 @@ def translate(
     if not can_transfer(key, mapped, target_value, slots, destination):
         return None, f"{key}={mapped!r} is not a value this destination accepts"
     return mapped, None
+
+
+# ---------------------------------------------------------------------------
+# Machine limits
+# ---------------------------------------------------------------------------
+# A process carries speeds and accelerations that were legal on the machine it
+# came from.  The destination declares its own maxima in ``machine_max_*``; a
+# value above them is what makes a slicer pop "the travel acceleration setting
+# exceeds the printer's maximum".  Clamping to the declared maximum is what the
+# slicer does anyway, except we say so in the report.
+
+TRAVEL_ACCELERATION = "travel_acceleration"
+
+XY_ACCELERATIONS = frozenset({
+    "default_acceleration", "outer_wall_acceleration", "inner_wall_acceleration",
+    "sparse_infill_acceleration", "internal_solid_infill_acceleration",
+    "top_surface_acceleration", "initial_layer_acceleration", "bridge_acceleration",
+    "initial_layer_travel_acceleration",
+})
+
+XY_SPEEDS = frozenset({
+    "initial_layer_speed", "initial_layer_infill_speed", "initial_layer_travel_speed",
+    "outer_wall_speed", "inner_wall_speed", "sparse_infill_speed",
+    "internal_solid_infill_speed", "top_surface_speed", "support_speed",
+    "support_interface_speed", "bridge_speed", "internal_bridge_speed",
+    "gap_infill_speed", "ironing_speed", "small_perimeter_speed", "travel_speed",
+    "overhang_1_4_speed", "overhang_2_4_speed", "overhang_3_4_speed", "overhang_4_4_speed",
+})
+
+Z_SPEEDS = frozenset({"travel_speed_z"})
+
+LIMIT_TRAVEL_ACCELERATION = ("machine_max_acceleration_travel",)
+LIMIT_XY_ACCELERATION = ("machine_max_acceleration_x", "machine_max_acceleration_y")
+LIMIT_XY_SPEED = ("machine_max_speed_x", "machine_max_speed_y")
+LIMIT_Z_SPEED = ("machine_max_speed_z",)
+
+
+def limit_keys_for(key: str) -> tuple[str, ...]:
+    """Machine maxima that bound this process value, or nothing."""
+    if key == TRAVEL_ACCELERATION:
+        return LIMIT_TRAVEL_ACCELERATION
+    if key in XY_ACCELERATIONS:
+        return LIMIT_XY_ACCELERATION
+    if key in XY_SPEEDS:
+        return LIMIT_XY_SPEED
+    if key in Z_SPEEDS:
+        return LIMIT_Z_SPEED
+    return ()
+
+
+def _ceiling_of(raw):
+    first = raw[0] if isinstance(raw, (list, tuple)) and raw else raw
+    if not isinstance(first, (str, int, float)):
+        return None
+    number = _number(str(first).strip())
+    return number if number is not None and number > 0 else None
+
+
+def machine_ceiling(values: dict, keys: tuple[str, ...]):
+    """The tightest of the declared maxima, or None when none is declared."""
+    limits = [c for c in (_ceiling_of(values.get(k)) for k in keys) if c is not None]
+    return min(limits) if limits else None
+
+
+def _clamp_scalar(entry, ceiling):
+    if not isinstance(entry, str):
+        return entry
+    text = entry.strip()
+    if not text or text.endswith("%"):
+        return entry
+    number = _number(text)
+    if number is None or number <= ceiling:
+        return entry
+    return f"{ceiling:g}"
+
+
+def clamp_to_limits(key: str, value, values: dict):
+    """Return ``(value, ceiling)``; the ceiling is set only when it clamped."""
+    keys = limit_keys_for(key)
+    if not keys:
+        return value, None
+    ceiling = machine_ceiling(values, keys)
+    if ceiling is None:
+        return value, None
+    if isinstance(value, (list, tuple)):
+        clamped = [_clamp_scalar(entry, ceiling) for entry in value]
+        return (clamped, ceiling) if clamped != list(value) else (value, None)
+    result = _clamp_scalar(value, ceiling)
+    return (result, ceiling) if result != value else (value, None)
