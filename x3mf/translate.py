@@ -331,6 +331,23 @@ class Translator:
         n_src = len(src_slots)
         kit_slots = self.kit.settings.filaments() if self.kit else []
 
+        # Declared slots are not the same as used slots: a Bambu profile carries
+        # four filaments while the model may reference one. Compacting first is
+        # what keeps a single-colour printer from inheriting three empty slots.
+        declared = n_src
+        used = self._used_source_slots()
+        if used is not None and declared and len(used) < declared:
+            keep = sorted(used)
+            src_slots = [src_slots[slot - 1] for slot in keep]
+            n_src = len(src_slots)
+            slot_position = {slot: position for position, slot in enumerate(keep, 1)}
+            self.report.adjusted.append(
+                f"{declared - n_src} unused filament slot(s) removed: the print only "
+                f"references slot(s) {', '.join(str(slot) for slot in keep)}"
+            )
+        else:
+            slot_position = {slot: slot for slot in range(1, declared + 1)}
+
         wanted = self.opts.filaments
         if wanted is None:
             wanted = max(n_src, 1)
@@ -392,9 +409,40 @@ class Translator:
                 f"filament slots extended from {n_src} to {wanted} by repeating the source slots"
             )
 
-        self.filament_map = mapping
+        self.filament_map = {
+            original: mapping.get(slot_position.get(original, 1), 1)
+            for original in range(1, declared + 1)
+        }
         self.out_filaments = out
-        self.report.counts["filament slots (source)"] = n_src
+        self.report.counts["filament slots (source)"] = declared
+
+    def _used_source_slots(self) -> set[int] | None:
+        """Slots the print actually references, or None when that cannot be known.
+
+        Object and part ``extruder`` metadata is the whole story only when no
+        other feature addresses a slot. Painted faces and per-layer assignments
+        carry slot bits we do not decode, so their presence disables compaction
+        rather than risking a wrong colour.
+        """
+        if any(part.has_paint for part in self.model.parts.values()):
+            return None
+        if self.pkg.has(LAYER_RANGES_PATH) and _SLOT_REF.search(self.pkg.require(LAYER_RANGES_PATH)):
+            return None
+        if self.pkg.has(FILAMENT_SEQUENCE_PATH) and re.search(
+            rb"\[\s*[0-9]", self.pkg.require(FILAMENT_SEQUENCE_PATH)
+        ):
+            return None
+
+        used: set[int] = set()
+        for obj in self.ms.object_elements():
+            parts = self.ms.parts(obj)
+            part_slots = {_slot_of(self.ms.part_meta(part, "extruder")) for part in parts}
+            part_slots.discard(0)
+            if part_slots:
+                used |= part_slots
+            else:
+                used.add(_slot_of(self.ms.object_meta(obj, "extruder")) or 1)
+        return used or {1}
 
     # -- 4. settings --------------------------------------------------------
     def _destination(self) -> Destination:
@@ -913,6 +961,17 @@ _UNIVERSAL_EXTRAS = frozenset({
     "thumbnails", "version", "from", "is_custom_defined", "printer_model",
     "printer_variant", "nozzle_diameter", "printer_technology", "gcode_flavor",
 })
+
+
+#: A slot number inside aux XML: ``filament="2"`` or ``key="extruder" value="2"``.
+_SLOT_REF = re.compile(rb'(?:filament|extruder)[^>]{0,40}?["=:\s]\s*([0-9]+)')
+
+
+def _slot_of(value: str | None) -> int:
+    """The 1-based slot in a metadata value, or 0 when it names none."""
+    if value and value.isdigit() and int(value) > 0:
+        return int(value)
+    return 0
 
 
 def _remap_extruder_meta(

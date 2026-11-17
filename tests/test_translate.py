@@ -2,6 +2,7 @@ import io
 import json
 import os
 import pathlib
+import re
 import sys
 import tempfile
 import unittest
@@ -267,6 +268,70 @@ class ValueMappingTests(unittest.TestCase):
             {"support_style": "grid"},
         )
         self.assertEqual(settings.get_str("support_style"), "grid")
+
+
+class UnusedSlotTests(unittest.TestCase):
+    """Declared filament slots are not the same as slots the print references."""
+
+    def _patch(self, path, patch):
+        import zipfile
+
+        with zipfile.ZipFile(path) as archive:
+            entries = {name: archive.read(name) for name in archive.namelist()}
+        entries = patch(entries)
+        with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as archive:
+            for name, payload in entries.items():
+                archive.writestr(name, payload)
+        return path
+
+    @staticmethod
+    def _only_slot_two(entries):
+        # Drop the features that reference other slots, so the object metadata is
+        # the whole truth about filament use.
+        for name in ("Metadata/layer_config_ranges.xml",
+                     "Metadata/custom_gcode_per_layer.xml",
+                     "Metadata/filament_sequence.json"):
+            entries.pop(name, None)
+        ms = entries["Metadata/model_settings.config"].decode()
+        entries["Metadata/model_settings.config"] = re.sub(
+            r'key="extruder" value="[0-9]+"', 'key="extruder" value="2"', ms
+        ).encode()
+        return entries
+
+    def test_slots_the_print_never_uses_are_dropped(self):
+        with support.scratch() as tmp:
+            tmp = pathlib.Path(tmp)
+            source = build_foreign_project(tmp / "src.3mf", broken=False, filaments=4)
+            self._patch(source, self._only_slot_two)
+            kit = build_kit_project(tmp / "kit.3mf")
+            translation = translate(source, kit)
+            settings = ProjectSettings.from_package(translation.package)
+            colours = settings.get_list("filament_colour")
+            extruders = {e.get("value") for e in ET.fromstring(
+                translation.package.require("Metadata/model_settings.config")
+            ).iter("metadata") if e.get("key") == "extruder"}
+        self.assertEqual(len(colours), 1, "a single-colour print should not keep four slots")
+        self.assertEqual(colours, ["#00FF00"], "the colour of source slot 2 survives")
+        self.assertEqual(extruders, {"1"}, "assignments are renumbered onto the survivor")
+        self.assertTrue(any("unused filament slot" in item for item in translation.report.adjusted))
+
+    def test_painted_faces_block_compaction(self):
+        with support.scratch() as tmp:
+            tmp = pathlib.Path(tmp)
+
+            def paint(entries):
+                entries = self._only_slot_two(entries)
+                part = "3D/Objects/part_2.model"
+                entries[part] = entries[part].replace(b"<triangle ", b'<triangle paint_color="4" ', 1)
+                return entries
+
+            source = build_foreign_project(tmp / "src.3mf", broken=False, filaments=4)
+            self._patch(source, paint)
+            kit = build_kit_project(tmp / "kit.3mf")
+            translation = translate(source, kit)
+            settings = ProjectSettings.from_package(translation.package)
+        self.assertEqual(len(settings.get_list("filament_colour")), 4,
+                         "painted slots cannot be decoded, so nothing may be dropped")
 
 
 class MachineLimitTests(unittest.TestCase):
