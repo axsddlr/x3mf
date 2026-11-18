@@ -334,6 +334,46 @@ class UnusedSlotTests(unittest.TestCase):
                          "painted slots cannot be decoded, so nothing may be dropped")
 
 
+class DeclaredRangeTests(unittest.TestCase):
+    """Some values make the destination refuse the project outright."""
+
+    def _translate(self, source_extra=None, kit_extra=None):
+        with support.scratch() as tmp:
+            tmp = pathlib.Path(tmp)
+            source = build_foreign_project(tmp / "src.3mf", broken=False, extra=source_extra or {})
+            kit = build_kit_project(tmp / "kit.3mf", extra=kit_extra or {})
+            translation = translate(source, kit)
+            settings = ProjectSettings.from_package(translation.package)
+            return translation, settings
+
+    def test_value_from_the_kit_is_clamped_into_range(self):
+        # Orca rejects the whole project when this is 30; it must not survive
+        # even when the destination's own preset is the one carrying it.
+        translation, settings = self._translate(
+            kit_extra={"retraction_distances_when_cut": ["30"]}
+        )
+        self.assertEqual(settings.get_list("retraction_distances_when_cut"), ["18"])
+        self.assertTrue(any("destination range 10-18" in item
+                            for item in translation.report.adjusted))
+
+    def test_value_from_the_source_is_clamped_into_range(self):
+        _, settings = self._translate(
+            source_extra={"retraction_distances_when_cut": ["30"]},
+            kit_extra={"retraction_distances_when_cut": ["18"]},
+        )
+        self.assertEqual(settings.get_list("retraction_distances_when_cut"), ["18"])
+
+    def test_validator_flags_an_out_of_range_value(self):
+        with support.scratch() as tmp:
+            path = build_kit_project(
+                pathlib.Path(tmp) / "bad.3mf",
+                extra={"retraction_distances_when_cut": ["30"]},
+            )
+            issues = [i for i in validate(Package.read(path)) if i.code == "V054"]
+        self.assertTrue(issues)
+        self.assertIn("10-18", issues[0].message)
+
+
 class MachineLimitTests(unittest.TestCase):
     """A process may not carry speeds the destination's firmware forbids."""
 

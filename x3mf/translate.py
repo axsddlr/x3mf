@@ -40,7 +40,8 @@ from .model import (
     Model3D,
     ModelSettings,
 )
-from .mapping import VARIANT_KEYS, Destination, alias_targets, clamp_to_limits, scalar_of
+from .mapping import (VARIANT_KEYS, Destination, alias_targets, clamp_range,
+                      clamp_to_limits, scalar_of)
 from .mapping import translate as translate_value
 from .settings import (
     GEOMETRY_KEYS,
@@ -550,6 +551,7 @@ class Translator:
             self.report.carried.append("all source settings carried unchanged (no kit)")
 
         self._clamp_machine_limits()
+        self._clamp_known_ranges()
 
         if self.opts.extruders is not None:
             self._force_extruder_count(self.opts.extruders)
@@ -558,6 +560,33 @@ class Translator:
         self._emit_identity()
         self._emit_flush_matrix()
         self._emit_diff()
+
+    def _clamp_known_ranges(self) -> None:
+        """Hold values inside a range the destination refuses to load outside of.
+
+        Unlike a speed, an out-of-range value here does not print worse; Orca
+        rejects the project with "not in range" and asks the user to fix it by
+        hand.  Whoever supplied the value, it cannot survive the trip.
+        """
+        fixed: list[str] = []
+        for key in list(self.out.keys()):
+            value = self.out.get(key)
+            replacement, bounds = clamp_range(key, value)
+            if bounds is None:
+                continue
+            if isinstance(replacement, list):
+                self.out.set_list(key, replacement)
+            else:
+                self.out.set(key, replacement)
+            fixed.append(
+                f"{key} {scalar_of(value)} -> {scalar_of(replacement)} "
+                f"(destination range {bounds[0]:g}-{bounds[1]:g})"
+            )
+        if fixed:
+            self.report.adjusted.append(
+                f"{len(fixed)} value(s) clamped to a range the destination accepts: "
+                + ", ".join(fixed[:6])
+            )
 
     def _clamp_machine_limits(self) -> None:
         """Hold speeds and accelerations inside the destination's declared maxima.

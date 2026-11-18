@@ -490,3 +490,40 @@ def clamp_to_limits(key: str, value, values: dict):
         return (clamped, ceiling) if clamped != list(value) else (value, None)
     result = _clamp_scalar(value, ceiling)
     return (result, ceiling) if result != value else (value, None)
+
+
+# ---------------------------------------------------------------------------
+# Values with a declared numeric range
+# ---------------------------------------------------------------------------
+# Orca validates these on load and refuses the project with "not in range", so a
+# value outside them is not a preference: it makes the file unopenable.  Ranges
+# are taken from the slicer's own validation text; add to this table only with
+# that evidence.
+
+KNOWN_RANGES: dict[str, tuple[float, float]] = {
+    # Orca: "-retraction_distances_when_cut: 30 not in range [10, 18]"
+    "retraction_distances_when_cut": (10.0, 18.0),
+}
+
+
+def clamp_range(key: str, value, ranges: dict[str, tuple[float, float]] | None = None):
+    """Return ``(value, (low, high))`` when a declared range clamped it."""
+    number_range = (ranges or KNOWN_RANGES).get(key)
+    if number_range is None:
+        return value, None
+    low, high = number_range
+
+    def clamp_one(entry):
+        if not isinstance(entry, str) or entry.strip().endswith("%"):
+            return entry
+        number = _number(entry.strip())
+        if number is None:
+            return entry
+        clamped = min(max(number, low), high)
+        return entry if clamped == number else f"{clamped:g}"
+
+    if isinstance(value, (list, tuple)):
+        clamped = [clamp_one(entry) for entry in value]
+        return (clamped, number_range) if clamped != list(value) else (value, None)
+    result = clamp_one(value)
+    return (result, number_range) if result != value else (value, None)

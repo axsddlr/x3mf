@@ -35,7 +35,7 @@ from .model import (
     q,
     NS,
 )
-from .mapping import limit_keys_for, machine_ceiling
+from .mapping import KNOWN_RANGES, limit_keys_for, machine_ceiling
 from .settings import GEOMETRY_KEYS, ProjectSettings
 
 
@@ -320,6 +320,24 @@ def _check_settings(settings: ProjectSettings, kit, c: _Collector) -> None:
             f"slot(s); expected 3 (process/filament/printer) or {slots + 2} "
             "(the same, one entry per filament)",
         )
+
+    for key, (low, high) in KNOWN_RANGES.items():
+        raw = settings.get(key)
+        entries = raw if isinstance(raw, list) else [raw]
+        for entry in entries:
+            if not isinstance(entry, str) or entry.strip().endswith("%"):
+                continue
+            try:
+                number = float(entry)
+            except ValueError:
+                continue
+            if not low <= number <= high:
+                c.warn(
+                    "V054",
+                    f"{key} is {entry} but the destination only accepts {low:g}-{high:g}; "
+                    "it will refuse to load the project",
+                )
+                break
 
     # A process value above the machine's declared maximum is exactly what makes
     # a slicer report "exceeds the printer's maximum" on load and cap it silently.
